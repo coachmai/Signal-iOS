@@ -4988,7 +4988,11 @@ interactionControllerForAnimationController:(id<UIViewControllerAnimatedTransiti
 
     DDLogDebug(@"%@ in %s with contact: %@", self.logTag, __PRETTY_FUNCTION__, contact);
 
-    OWSContact *_Nullable contactShareRecord = [OWSContacts contactForSystemContact:contact.cnContact];
+    __block OWSContact *_Nullable contactShareRecord;
+    [OWSPrimaryStorage.sharedManager.newDatabaseConnection
+        readWriteWithBlock:^(YapDatabaseReadWriteTransaction *transaction) {
+            contactShareRecord = [OWSContacts contactForSystemContact:contact.cnContact transaction:transaction];
+        }];
     if (!contactShareRecord) {
         DDLogError(@"%@ Could not convert system contact.", self.logTag);
         return;

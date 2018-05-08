@@ -61,7 +61,8 @@ public class ContactsPicker: OWSViewController, UITableViewDelegate, UITableView
         CNContactThumbnailImageDataKey as CNKeyDescriptor,
         CNContactPhoneNumbersKey as CNKeyDescriptor,
         CNContactEmailAddressesKey as CNKeyDescriptor,
-        CNContactPostalAddressesKey as CNKeyDescriptor
+        CNContactPostalAddressesKey as CNKeyDescriptor,
+        CNContactVCardSerialization.descriptorForRequiredKeys()
     ]
 
     // MARK: - Lifecycle Methods

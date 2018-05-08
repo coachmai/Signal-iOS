@@ -148,7 +148,13 @@ typedef void (^SendMessageBlock)(SendCompletionBlock completion);
 
     if (self.attachment.isConvertibleToContactShare) {
         NSData *data = self.attachment.data;
-        OWSContact *_Nullable contact = [OWSContacts contactForVCardData:data];
+        __block OWSContact *_Nullable contact;
+        __block TSAttachment *_Nullable avatarAttachment;
+        [OWSPrimaryStorage.sharedManager.newDatabaseConnection
+            readWriteWithBlock:^(YapDatabaseReadWriteTransaction *transaction) {
+                contact = [OWSContacts contactForVCardData:data transaction:transaction];
+                avatarAttachment = [contact avatarAttachmentWithTransaction:transaction];
+            }];
 
         if (!contact) {
             // This should never happen since we verify that the contact can be parsed when building the attachment.
@@ -157,9 +163,20 @@ typedef void (^SendMessageBlock)(SendCompletionBlock completion);
             return;
         }
 
-        // TODO: Populate avatar image.
         BOOL isProfileAvatar = NO;
         UIImage *_Nullable avatarImage = nil;
+        if ([avatarAttachment isKindOfClass:[TSAttachmentStream class]]) {
+            avatarImage = ((TSAttachmentStream *)avatarAttachment).image;
+        }
+        for (NSString *recipientId in contact.e164PhoneNumbers) {
+            if (avatarImage) {
+                break;
+            }
+            avatarImage = [self.contactsManager profileImageForPhoneIdentifier:recipientId];
+            if (avatarImage) {
+                isProfileAvatar = YES;
+            }
+        }
         contact.isProfileAvatar = isProfileAvatar;
 
         ContactShareViewModel *contactShare =
@@ -282,7 +299,7 @@ typedef void (^SendMessageBlock)(SendCompletionBlock completion);
 #pragma mark - ApproveContactShareViewControllerDelegate
 
 - (void)approveContactShare:(ApproveContactShareViewController *)approvalViewController
-     didApproveContactShare:(OWSContact *)contactShare
+     didApproveContactShare:(ContactShareViewModel *)contactShare
 {
     DDLogInfo(@"%@ in %s", self.logTag, __PRETTY_FUNCTION__);
 
@@ -291,7 +308,7 @@ typedef void (^SendMessageBlock)(SendCompletionBlock completion);
         OWSAssertIsOnMainThread();
 
         __block TSOutgoingMessage *outgoingMessage = nil;
-        outgoingMessage = [ThreadUtil sendMessageWithContactShare:contactShare
+        outgoingMessage = [ThreadUtil sendMessageWithContactShare:contactShare.dbRecord
                                                          inThread:self.thread
                                                     messageSender:self.messageSender
                                                        completion:^(NSError *_Nullable error) {
@@ -304,7 +321,7 @@ typedef void (^SendMessageBlock)(SendCompletionBlock completion);
 }
 
 - (void)approveContactShare:(ApproveContactShareViewController *)approvalViewController
-      didCancelContactShare:(OWSContact *)contactShare
+      didCancelContactShare:(ContactShareViewModel *)contactShare
 {
     DDLogInfo(@"%@ in %s", self.logTag, __PRETTY_FUNCTION__);
 

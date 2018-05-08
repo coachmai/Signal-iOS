@@ -28,9 +28,17 @@ public class ContactShareViewModel: NSObject {
             return avatarImage
         }
 
-        // TODO: What's the best colorSeed value to use?
+        var colorSeed = displayName
+        let recipientIds = systemContactsWithSignalAccountPhoneNumbers(contactsManager)
+        if let firstRecipientId = recipientIds.first {
+            // Try to use the first signal id as the default
+            // avatar's color seed, so that it is as consistent
+            // as possible with the user's avatar in other views.
+            colorSeed = firstRecipientId
+        }
+
         let avatarBuilder = OWSContactAvatarBuilder(nonSignalName: displayName,
-                                                    colorSeed: displayName,
+                                                    colorSeed: colorSeed,
                                                     diameter: UInt(diameter),
                                                     contactsManager: contactsManager)
         return avatarBuilder.build()
@@ -125,16 +133,22 @@ public class ContactShareViewModel: NSObject {
                            givenName: String?,
                            middleName: String?,
                            familyName: String?,
-                           nameSuffix: String?) -> ContactShareViewModel {
+                           nameSuffix: String?,
+                           avatarAttachmentId: String?,
+                           avatarImage: UIImage?) -> ContactShareViewModel {
+
+        if ((avatarAttachmentId != nil) != (avatarImage != nil)) {
+            owsFail("\(logTag) either avatarAttachmentId or avatarImage is missing.")
+        }
 
         // TODO move the `newContact` logic into the view model?
         let newDbRecord = dbRecord.newContact(withNamePrefix: namePrefix,
                                               givenName: givenName,
                                               middleName: middleName,
                                               familyName: familyName,
-                                              nameSuffix: nameSuffix)
+                                              nameSuffix: nameSuffix,
+                                              avatarAttachmentId: avatarAttachmentId)
 
         return ContactShareViewModel(contactShareRecord: newDbRecord, avatarImage: self.avatarImage)
     }
-
 }

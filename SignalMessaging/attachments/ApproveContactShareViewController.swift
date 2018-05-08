@@ -55,6 +55,41 @@ class ContactShareFieldBase<ContactFieldType: OWSContactField>: NSObject, Contac
 
 // MARK: -
 
+// Stub class so that avatars conform to OWSContactField.
+class OWSContactAvatar: NSObject, OWSContactField {
+
+    public let avatar: UIImage
+
+    required init(_ avatar: UIImage) {
+        self.avatar = avatar
+
+        super.init()
+    }
+
+    public func ows_isValid() -> Bool {
+        return true
+    }
+
+    public func localizedLabel() -> String {
+        return ""
+    }
+
+    public func logDescription() -> String {
+        return "Avatar"
+    }
+}
+
+// MARK: -
+
+class ContactShareAvatar: ContactShareFieldBase<OWSContactAvatar> {
+    override func applyToContact(contact: ContactShareViewModel) {
+        // Avatars are applied separately.
+        assert(isIncluded())
+    }
+}
+
+// MARK: -
+
 class ContactSharePhoneNumber: ContactShareFieldBase<OWSContactPhoneNumber> {
 
     override func applyToContact(contact: ContactShareViewModel) {
@@ -187,6 +222,7 @@ public class ApproveContactShareViewController: OWSViewController, EditContactSh
 
     var contactShare: ContactShareViewModel
 
+    var avatarField: ContactShareAvatar?
     var fieldViews = [ContactShareFieldView]()
 
     var nameLabel: UILabel!
@@ -212,9 +248,17 @@ public class ApproveContactShareViewController: OWSViewController, EditContactSh
     func buildFields() {
         var fieldViews = [ContactShareFieldView]()
 
-        // TODO: Avatar
-
         let previewInsets = UIEdgeInsets(top: 5, left: 0, bottom: 5, right: 0)
+
+        if let avatarImage = contactShare.avatarImage {
+            let field = ContactShareAvatar(OWSContactAvatar(avatarImage))
+            avatarField = field
+            let fieldView = ContactShareFieldView(field: field, previewViewBlock: {
+                return ContactFieldView.contactFieldView(forAvatarImage: avatarImage, layoutMargins: previewInsets, actionBlock: nil)
+            },
+                                                  delegate: self)
+            fieldViews.append(fieldView)
+        }
 
         for phoneNumber in contactShare.phoneNumbers {
             let field = ContactSharePhoneNumber(phoneNumber)
@@ -392,11 +436,26 @@ public class ApproveContactShareViewController: OWSViewController, EditContactSh
     // MARK: -
 
     func filteredContactShare() -> ContactShareViewModel {
+        var avatarImage: UIImage?
+        var avatarAttachmentId: String?
+        if let avatarField = avatarField {
+            if avatarField.isIncluded() {
+                if let attachmentId = self.contactShare.dbRecord.avatarAttachmentId {
+                    avatarAttachmentId = attachmentId
+                    avatarImage = avatarField.value.avatar
+                } else {
+                    owsFail("\(logTag) missing avatar attachment id")
+                }
+            }
+        }
+
         let result = self.contactShare.newContact(withNamePrefix: self.contactShare.namePrefix,
                                                   givenName: self.contactShare.givenName,
                                                   middleName: self.contactShare.middleName,
                                                   familyName: self.contactShare.familyName,
-                                                  nameSuffix: self.contactShare.nameSuffix)
+                                                  nameSuffix: self.contactShare.nameSuffix,
+                                                  avatarAttachmentId: avatarAttachmentId,
+                                                  avatarImage: avatarImage)
 
         for fieldView in fieldViews {
             if fieldView.field.isIncluded() {

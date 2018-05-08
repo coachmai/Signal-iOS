@@ -34,7 +34,7 @@ NSString *NSStringForContactPhoneType(OWSContactPhoneType value);
 
 - (NSString *)localizedLabel;
 
-- (NSString *)debugDescription;
+- (NSString *)logDescription;
 
 @end
 
@@ -125,7 +125,7 @@ NSString *NSStringForContactAddressType(OWSContactAddressType value);
 
 - (BOOL)ows_isValid;
 
-- (NSString *)debugDescription;
+- (NSString *)logDescription;
 
 #pragma mark - Creation and Derivation
 
@@ -133,7 +133,8 @@ NSString *NSStringForContactAddressType(OWSContactAddressType value);
                                givenName:(nullable NSString *)givenName
                               middleName:(nullable NSString *)middleName
                               familyName:(nullable NSString *)familyName
-                              nameSuffix:(nullable NSString *)nameSuffix;
+                              nameSuffix:(nullable NSString *)nameSuffix
+                      avatarAttachmentId:(nullable NSString *)avatarAttachmentId;
 
 - (OWSContact *)copyContactWithNamePrefix:(nullable NSString *)namePrefix
                                 givenName:(nullable NSString *)givenName
@@ -163,13 +164,16 @@ NSString *NSStringForContactAddressType(OWSContactAddressType value);
 
 #pragma mark - System Contact Conversion
 
-+ (nullable OWSContact *)contactForSystemContact:(CNContact *)systemContact;
-+ (nullable CNContact *)systemContactForContact:(OWSContact *)contact;
++ (nullable OWSContact *)contactForSystemContact:(CNContact *)systemContact
+                                     transaction:(YapDatabaseReadWriteTransaction *)transaction;
++ (nullable CNContact *)systemContactForContact:(OWSContact *)contact
+                                    transaction:(YapDatabaseReadTransaction *)transaction;
++ (nullable CNContact *)nameOnlySystemContactForContact:(OWSContact *)contact;
 
 #pragma mark -
 
-+ (nullable OWSContact *)contactForVCardData:(NSData *)data;
-+ (nullable NSData *)vCardDataContact:(OWSContact *)contact;
++ (nullable OWSContact *)contactForVCardData:(NSData *)data transaction:(YapDatabaseReadWriteTransaction *)transaction;
++ (nullable NSData *)vCardDataForContact:(OWSContact *)contact transaction:(YapDatabaseReadTransaction *)transaction;
 
 #pragma mark - Proto Serialization
 

@@ -721,7 +721,11 @@ public class ShareViewController: UIViewController, ShareViewDelegate, SAEFailed
                                                                   utiType: kUTTypeVCard as String) {
                     customFileName = "Contact.vcf"
 
-                    if let contactShare = OWSContacts.contact(forVCardData: data) {
+                    var contactShare: OWSContact?
+                    OWSPrimaryStorage.shared().newDatabaseConnection().readWrite({ (transaction) in
+                        contactShare = OWSContacts.contact(forVCardData: data, transaction: transaction)
+                    })
+                    if contactShare != nil {
                         isConvertibleToContactShare = true
                     } else {
                         Logger.error("\(strongSelf.logTag) could not parse vcard.")

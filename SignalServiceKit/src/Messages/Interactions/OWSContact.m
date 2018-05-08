@@ -74,7 +74,7 @@ NSString *NSStringForContactPhoneType(OWSContactPhoneType value)
     }
 }
 
-- (NSString *)debugDescription
+- (NSString *)logDescription
 {
     NSMutableString *result = [NSMutableString new];
     [result appendFormat:@"[Phone Number: %@, ", NSStringForContactPhoneType(self.phoneType)];
@@ -147,7 +147,7 @@ NSString *NSStringForContactEmailType(OWSContactEmailType value)
     }
 }
 
-- (NSString *)debugDescription
+- (NSString *)logDescription
 {
     NSMutableString *result = [NSMutableString new];
     [result appendFormat:@"[Email: %@, ", NSStringForContactEmailType(self.emailType)];
@@ -224,7 +224,7 @@ NSString *NSStringForContactAddressType(OWSContactAddressType value)
     }
 }
 
-- (NSString *)debugDescription
+- (NSString *)logDescription
 {
     NSMutableString *result = [NSMutableString new];
     [result appendFormat:@"[Address: %@, ", NSStringForContactAddressType(self.addressType)];
@@ -358,7 +358,7 @@ NSString *NSStringForContactAddressType(OWSContactAddressType value)
 - (void)ensureDisplayName
 {
     if (_displayName.length < 1) {
-        CNContact *_Nullable systemContact = [OWSContacts systemContactForContact:self];
+        CNContact *_Nullable systemContact = [OWSContacts nameOnlySystemContactForContact:self];
         _displayName = [CNContactFormatter stringFromContact:systemContact style:CNContactFormatterStyleFullName];
     }
     if (_displayName.length < 1) {
@@ -374,7 +374,7 @@ NSString *NSStringForContactAddressType(OWSContactAddressType value)
     [self ensureDisplayName];
 }
 
-- (NSString *)debugDescription
+- (NSString *)logDescription
 {
     NSMutableString *result = [NSMutableString new];
     [result appendString:@"["];
@@ -399,13 +399,13 @@ NSString *NSStringForContactAddressType(OWSContactAddressType value)
     }
 
     for (OWSContactPhoneNumber *phoneNumber in self.phoneNumbers) {
-        [result appendFormat:@"%@, ", phoneNumber.debugDescription];
+        [result appendFormat:@"%@, ", phoneNumber.logDescription];
     }
     for (OWSContactEmail *email in self.emails) {
-        [result appendFormat:@"%@, ", email.debugDescription];
+        [result appendFormat:@"%@, ", email.logDescription];
     }
     for (OWSContactAddress *address in self.addresses) {
-        [result appendFormat:@"%@, ", address.debugDescription];
+        [result appendFormat:@"%@, ", address.logDescription];
     }
 
     [result appendString:@"]"];
@@ -417,6 +417,7 @@ NSString *NSStringForContactAddressType(OWSContactAddressType value)
                               middleName:(nullable NSString *)middleName
                               familyName:(nullable NSString *)familyName
                               nameSuffix:(nullable NSString *)nameSuffix
+                      avatarAttachmentId:(nullable NSString *)avatarAttachmentId
 {
     OWSContact *newContact = [OWSContact new];
 
@@ -425,6 +426,8 @@ NSString *NSStringForContactAddressType(OWSContactAddressType value)
                    middleName:middleName
                    familyName:familyName
                    nameSuffix:nameSuffix];
+
+    newContact.avatarAttachmentId = avatarAttachmentId;
 
     return newContact;
 }
@@ -468,7 +471,6 @@ NSString *NSStringForContactAddressType(OWSContactAddressType value)
     return [TSAttachment fetchObjectWithUniqueID:self.avatarAttachmentId transaction:transaction];
 }
 
-
 - (void)saveAvatarImage:(UIImage *)image transaction:(YapDatabaseReadWriteTransaction *)transaction
 {
     NSData *imageData = UIImageJPEGRepresentation(image, (CGFloat)0.9);
@@ -483,6 +485,11 @@ NSString *NSStringForContactAddressType(OWSContactAddressType value)
 
     [attachmentStream saveWithTransaction:transaction];
     self.avatarAttachmentId = attachmentStream.uniqueId;
+}
+
+- (void)setAvatarAttachmentId:(nullable NSString *)avatarAttachmentId
+{
+    _avatarAttachmentId = avatarAttachmentId;
 }
 
 #pragma mark - Phone Numbers and Recipient IDs
@@ -580,7 +587,10 @@ NSString *NSStringForContactAddressType(OWSContactAddressType value)
 #pragma mark - System Contact Conversion
 
 + (nullable OWSContact *)contactForSystemContact:(CNContact *)systemContact
+                                     transaction:(YapDatabaseReadWriteTransaction *)transaction;
 {
+    OWSAssert(transaction);
+
     if (!systemContact) {
         OWSProdLogAndFail(@"%@ Missing contact.", self.logTag);
         return nil;
@@ -669,18 +679,49 @@ NSString *NSStringForContactAddressType(OWSContactAddressType value)
     }
     contact.addresses = addresses;
 
-    // TODO: Avatar
-
-    //    @property (readonly, copy, nullable, NS_NONATOMIC_IOSONLY) NSData *imageData;
-    //    @property (readonly, copy, nullable, NS_NONATOMIC_IOSONLY) NSData *thumbnailImageData;
+    // Avatar
+    NSData *_Nullable imageData = systemContact.thumbnailImageData;
+    if (!imageData) {
+        imageData = systemContact.imageData;
+    }
+    if (imageData) {
+        UIImage *_Nullable image = [UIImage imageWithData:imageData];
+        if (!image) {
+            OWSProdLogAndFail(@"%@ could not load avatar.", self.logTag);
+        } else {
+            [contact saveAvatarImage:image transaction:transaction];
+        }
+    }
 
     [contact ensureDisplayName];
 
     return contact;
 }
 
-+ (nullable CNContact *)systemContactForContact:(OWSContact *)contact
++ (nullable CNContact *)nameOnlySystemContactForContact:(OWSContact *)contact
 {
+    if (!contact) {
+        OWSProdLogAndFail(@"%@ Missing contact.", self.logTag);
+        return nil;
+    }
+
+    CNMutableContact *systemContact = [CNMutableContact new];
+    systemContact.givenName = contact.givenName;
+    systemContact.middleName = contact.middleName;
+    systemContact.familyName = contact.familyName;
+    systemContact.namePrefix = contact.namePrefix;
+    systemContact.nameSuffix = contact.nameSuffix;
+    // We don't need to set display name, it's implicit for system contacts.
+    systemContact.organizationName = contact.organizationName;
+
+    return systemContact;
+}
+
++ (nullable CNContact *)systemContactForContact:(OWSContact *)contact
+                                    transaction:(YapDatabaseReadTransaction *)transaction
+{
+    OWSAssert(transaction);
+
     if (!contact) {
         OWSProdLogAndFail(@"%@ Missing contact.", self.logTag);
         return nil;
@@ -777,32 +818,46 @@ NSString *NSStringForContactAddressType(OWSContactAddressType value)
     }
     systemContact.postalAddresses = systemAddresses;
 
-    // TODO: Avatar
-
-    //    @property (readonly, copy, nullable, NS_NONATOMIC_IOSONLY) NSData *imageData;
-    //    @property (readonly, copy, nullable, NS_NONATOMIC_IOSONLY) NSData *thumbnailImageData;
+    // Avatar
+    //
+    // NOTE: We don't want to write profile avatars to system contacts.
+    if (!contact.isProfileAvatar) {
+        TSAttachment *_Nullable avatarAttachment = [contact avatarAttachmentWithTransaction:transaction];
+        if ([avatarAttachment isKindOfClass:[TSAttachmentStream class]]) {
+            TSAttachmentStream *avatarAttachmentStream = (TSAttachmentStream *)avatarAttachment;
+            NSError *error;
+            NSData *_Nullable avatarData = [avatarAttachmentStream readDataFromFileWithError:&error];
+            if (error || !avatarData) {
+                OWSProdLogAndFail(@"%@ could not read avatar data: %@", self.logTag, error);
+            } else {
+                systemContact.imageData = avatarData;
+            }
+        }
+    }
 
     return systemContact;
 }
 
 #pragma mark -
 
-+ (nullable OWSContact *)contactForVCardData:(NSData *)data
++ (nullable OWSContact *)contactForVCardData:(NSData *)data transaction:(YapDatabaseReadWriteTransaction *)transaction
 {
     OWSAssert(data);
+    OWSAssert(transaction);
 
     CNContact *_Nullable systemContact = [self systemContactForVCardData:data];
     if (!systemContact) {
         return nil;
     }
-    return [self contactForSystemContact:systemContact];
+    return [self contactForSystemContact:systemContact transaction:transaction];
 }
 
-+ (nullable NSData *)vCardDataContact:(OWSContact *)contact
++ (nullable NSData *)vCardDataForContact:(OWSContact *)contact transaction:(YapDatabaseReadTransaction *)transaction
 {
     OWSAssert(contact);
+    OWSAssert(transaction);
 
-    CNContact *_Nullable systemContact = [self systemContactForContact:contact];
+    CNContact *_Nullable systemContact = [self systemContactForContact:contact transaction:transaction];
     if (!systemContact) {
         return nil;
     }
@@ -1017,7 +1072,6 @@ NSString *NSStringForContactAddressType(OWSContactAddressType value)
             OWSFail(@"%@ in %s avatarInfo.hasAvatar was unexpectedly false", self.logTag, __PRETTY_FUNCTION__);
         }
     }
-
 
     return contact;
 }
